@@ -1,0 +1,144 @@
+  # -*- coding: utf-8 -*-
+  """
+  Created on Mon Apr  5 12:09:11 2021
+  
+  @author: Trigun Maroo
+  """
+  
+  
+ import scipy.io as sio
+ import os
+ import re
+ import matplotlib.pyplot as plt
+ import numpy as np
+ 
+ print('\014')                                         #clears the console screen
+ 
+ #----------------Set B&K SLM Mic Gain---------------------#
+ mic_gain = 0.025                                      #B&K Mic Gain
+ dB_factor = round (1 / ((mic_gain)*(20 * 10**-6)),3)  # 1 / B&K mic gain * 20 uPa
+ 
+ #----------------Import .mat file-------------------------#
+ filenames = [ '500l1_1.mat',  '500l1_2.mat', '500l1_3.mat', '500l2_1.mat', '500l2_2.mat', '500l2_3.mat',  '500l3_1.mat', '500l3_2.mat', '500l3_3.mat',  '500l4_1.mat', '500l4_2.mat', '500l4_3.mat', \
+               '1000l1_1.mat','1000l1_2.mat','1000l1_3.mat', '1000l2_1.mat','1000l2_2.mat','1000l2_3.mat', '1000l3_1.mat','1000l3_2.mat','1000l3_3.mat', '1000l4_1.mat','1000l4_2.mat','1000l4_3.mat', \
+               '2000l1_1.mat','2000l1_2.mat','2000l1_3.mat', '2000l2_1.mat','2000l2_2.mat','2000l2_3.mat', '2000l3_1.mat','2000l3_2.mat','2000l3_3.mat', '2000l4_1.mat','2000l4_2.mat','2000l4_3.mat', \
+               '3150l1_1.mat','3150l1_2.mat','3150l1_3.mat', '3150l2_1.mat','3150l2_2.mat','3150l2_3.mat', '3150l3_1.mat','3150l3_2.mat','3150l3_3.mat', '3150l4_1.mat','3150l4_2.mat','3150l4_3.mat', \
+               '4000l1_1.mat','4000l1_2.mat','4000l1_3.mat', '4000l2_1.mat','4000l2_2.mat','4000l2_3.mat', '4000l3_1.mat','4000l3_2.mat','4000l3_3.mat', '4000l4_1.mat','4000l4_2.mat','4000l4_3.mat',\
+               '6300l1_1.mat','6300l1_2.mat','6300l1_3.mat', '6300l2_1.mat','6300l2_2.mat','6300l2_3.mat', '6300l3_1.mat','6300l3_2.mat','6300l3_3.mat', '6300l4_1.mat','6300l4_2.mat','6300l4_3.mat']            #List the names of all ".mat" files
+     
+     
+ def loadmatfile (name_of_file):
+     path = r"insert your folder location path here"
+     os.chdir(path)
+     return sio.loadmat(name_of_file)
+ #The sio.loadmat command could have been used directly.
+ #However, putting it as a UDF function makes it call the UDF function each time 
+ #the loop is run. This way, the pwd is set to one defined in "path" per
+ #iteration of the loop.
+ 
+ #---------------Define other UDF functions-----------------#
+ def rms_of_array (array,window_size):
+         rms_array = np.zeros(len(array)-window_size+1)
+         for m in range (0,len(array)-window_size+1,1):   
+             tmp = array[m:m+window_size]
+             #rms_array [m] = round(np.sqrt(np.mean(tmp**2)),6)
+             rms_array [m] = np.sqrt(np.mean(tmp**2))
+         return rms_array
+ 
+ def same_length_rms_function(rms_array,window_size,time):
+         same_length_rms = np.zeros(len(time))  #creates array of length time array
+         for n in range(0,len(rms_array),1):
+             if window_size % 2 == 0:
+                     print("Window size =", window_size, "is not odd")
+                     break        
+             for i in range(n,window_size+n,1):
+                 if i == int( (n+(window_size+n)-1) /2):
+                     same_length_rms [i] = rms_array[n]
+                 else:
+                     same_length_rms [i] = same_length_rms[i]
+         return (same_length_rms)
+ 
+ 
+ #----------------Run main loop------------------------#
+ for item in filenames:
+     mat_filename = loadmatfile(item)
+     #print(mat_filename.keys())                 # prints all variables in a matfile
+     
+     #---Extract channel data
+     data = mat_filename['TimeDat']              # output is 2D vector containting ch1 and ch2
+     ch2 = data[:,1]                             # extract ch2 data
+     Time_vector = mat_filename['Tvec']          # (7000,1) array.
+     T = Time_vector.reshape(8192,)
+     Fs = mat_filename['SampleRate'][0][0]       #sampling frequency
+     
+     #---Extract freq of signal from file name---
+     """
+     IF FILE LOCATION CHANGED, CHECK THE COMMAND BELOW TO SEE IF CORRECT NUMBER IS EXTRACTED
+     """
+     num_file_loc = re.findall('\d+', item)   
+     freq_sig = float(num_file_loc[len(num_file_loc)-3]) #frequency of signal in Hz
+     #---
+     
+     # --------------conversion to dB scale-------------------#
+     #---find Vrms---
+     if freq_sig == 3150:
+         window = 33     # For f=3150, 33
+     elif freq_sig== 4000:
+         window = 13     # For f=4000, 13
+     elif freq_sig == 6300:
+         window = 37     # For f=6300, 37
+     else:
+         window = int( round( (1/freq_sig) / (1/Fs) ) )  #int converts to int data type. "round" rounds off to nearest
+     #decimal place. this could be done with int, but int does not round but truncates decimals rather
+     
+     #window =  9     # For 3150, 6300 --> 17, 9 (Iteration 18_D7)
+     
+     tmp_v_rms = rms_of_array(ch2,window)      #V_rms of array, but unequal length
+     
+     #---creating the same length rms array but with "center" indexing---
+     V_rms = same_length_rms_function(tmp_v_rms, window, T)  #equal length V_rms array but with zeroes
+    
+    #---log doesn't like zero, so replace with small value---#
+    for i in range (0,len(V_rms),1):
+        if V_rms[i] == 0:
+            V_rms[i] = 1e-6
+        else:
+            V_rms[i] = V_rms[i]
+    
+    #---finally convert to dB---
+    dB = 20*np.log10(dB_factor * V_rms)            # SPL in dB
+    avg_dB = np.average(dB)
+    #-------------------------------------
+    
+    #----------------------Output---------------------------#
+    print("-----filename =", item,"-----")
+    
+    
+    #--------------------Plot Output---------------------
+    #---Begin Plotting---
+    plt.figure(1)
+    plt.title('Original Voltage Data @ %s Hz' %freq_sig)
+    plt.plot(T,ch2,label='Original Data')
+    plt.ylim(-0.6,+0.6)
+    plt.xlabel('Time (s)')
+    plt.ylabel('Voltage (V)')
+    plt.plot(T,V_rms,label='V_RMS Line',color = 'red')
+    plt.legend(loc='lower left')
+    plt.show()
+    
+    plt.figure(2)
+    plt.title('Sound Pressure Level @ %s Hz' %freq_sig)
+    plt.plot(T, dB,label='dB of Original Data')
+    plt.xlabel('Time (s)')
+    plt.ylabel('SPL ref 20 $\mu$Pa (dB)')
+    plt.ylim(60,120)
+    plt.hlines(avg_dB,min(T),max(T),label='Average dB', ls = 'dashed', colors='r')      #average dB value
+    #plt.hlines(avg_dB,T[0],T[55],label='Average dB', ls = 'dashed', colors='r')        #average dB value
+    #plt.hlines(insert SR noise value here,min(T),max(T),label='Ambient Noise Floor', ls = 'dashed')         #Source Room
+    plt.hlines(insert RR noise value here,min(T),max(T),label='Ambient Noise Floor', ls = 'dashed')          #Receiver Room
+    plt.legend(loc='lower right')
+    plt.show()
+        
+    print("Average SPL =", round(avg_dB,2), "dB")
+    print("-------------")
+    print("")
